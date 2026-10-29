@@ -1,0 +1,699 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-title" content="Prompter">
+<meta name="theme-color" content="#0b0d10">
+<title>Voice Prompter – Kapitel 1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: editor (script + settings column) → full-screen prompter stage with a fixed reading line. Single dark look by choice: it's a studio monitor. */
+:root{
+  --stage:#0b0d10;
+  --panel:#15181d;
+  --rule:#272c35;
+  --ink:#f3efe4;
+  --mute:#7c8493;
+  --said:#3a404b;
+  --cue:#ffc94a;
+  --tally:#ff4f45;
+  --read:"Atkinson Hyperlegible","Segoe UI",system-ui,sans-serif;
+  --ui:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --size:56px;
+  --readpos:0.33;
+  --vh:100vh;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--stage);color:var(--ink);font:15px/1.5 var(--read)}
+button,select,input,textarea{font:inherit;color:inherit}
+button{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+@supports (height:100dvh){:root{--vh:100dvh}}
+:focus-visible{outline:2px solid var(--cue);outline-offset:2px}
+[hidden]{display:none!important}
+
+/* ---------- editor ---------- */
+#editor{display:grid;grid-template-columns:minmax(0,1fr) 300px;grid-template-rows:auto 1fr;height:100%;}
+#editor header{grid-column:1/-1;display:flex;align-items:center;gap:12px;padding:14px max(20px,env(safe-area-inset-left));border-bottom:1px solid var(--rule)}
+.brand{font:500 13px var(--ui);letter-spacing:.14em;text-transform:uppercase}
+.tally{width:10px;height:10px;border-radius:50%;background:var(--said);box-shadow:0 0 0 3px #0000}
+.tally.on{background:var(--tally);box-shadow:0 0 0 3px #ff4f4533,0 0 14px var(--tally)}
+#count{margin-left:auto;font:13px var(--ui);color:var(--mute);font-variant-numeric:tabular-nums}
+#script{width:100%;height:100%;resize:none;border:0;background:transparent;padding:28px max(20px,env(safe-area-inset-left));font:400 20px/1.6 var(--read);color:var(--ink);min-width:0}
+#script:focus-visible{outline:none}
+aside{border-left:1px solid var(--rule);background:var(--panel);padding:22px 20px;display:flex;flex-direction:column;gap:18px;overflow:auto}
+label.f{display:flex;flex-direction:column;gap:6px;font:12px var(--ui);color:var(--mute);letter-spacing:.06em;text-transform:uppercase}
+label.f span.v{color:var(--ink);text-transform:none;letter-spacing:0}
+select,input[type=range]{width:100%}
+select{background:var(--stage);border:1px solid var(--rule);border-radius:6px;padding:8px 10px;text-transform:none;letter-spacing:0;font-family:var(--read);font-size:16px}
+input[type=range]{accent-color:var(--cue)}
+label.chk{display:flex;align-items:center;gap:10px;font-size:15px;cursor:pointer}
+input[type=checkbox]{accent-color:var(--cue);width:18px;height:18px}
+.go{margin-top:auto;display:flex;flex-direction:column;gap:10px}
+.btn{border:1px solid var(--rule);background:var(--stage);border-radius:8px;padding:10px 14px;cursor:pointer}
+.btn:hover{border-color:var(--mute)}
+.btn.primary{background:var(--cue);color:#1a1405;border-color:var(--cue);font-weight:700;padding:13px 16px;font-size:16px}
+.note{font-size:13px;color:var(--mute);line-height:1.45}
+.note.warn{color:var(--cue)}
+kbd{font:12px var(--ui);border:1px solid var(--rule);border-radius:4px;padding:1px 5px;color:var(--ink)}
+
+@media (max-width:720px){
+  #editor{grid-template-columns:1fr;grid-template-rows:auto minmax(45vh,1fr) auto;height:auto;min-height:100%}
+  aside{border-left:0;border-top:1px solid var(--rule)}
+}
+
+/* ---------- prompter ---------- */
+#prompter{position:fixed;inset:0;background:var(--stage)}
+#stage{position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;scrollbar-width:none;padding-left:max(24px,env(safe-area-inset-left));padding-right:max(24px,env(safe-area-inset-right))}
+#stage::-webkit-scrollbar{display:none}
+#text{max-width:24em;margin:0 auto;padding-top:calc(var(--readpos)*var(--vh));padding-bottom:calc(.8*var(--vh));font:400 var(--size)/1.42 var(--read);letter-spacing:.01em}
+#text.mirror{transform:scaleX(-1)}
+#text p{margin:0 0 .9em}
+.w{color:var(--ink);border-radius:.12em;cursor:pointer;transition:color .25s}
+.w.said{color:var(--said)}
+.w.now{color:var(--cue);box-shadow:0 .08em 0 0 var(--cue)}
+.slide{display:flex;align-items:center;gap:.45em;margin:1.6em 0 .8em;font-size:calc(var(--size)*.4);line-height:1.2;cursor:pointer;transition:opacity .3s}
+.slide:first-child{margin-top:0}
+.slide .num{font:700 1em var(--ui);background:var(--cue);color:#1a1405;padding:.2em .6em;border-radius:.2em;letter-spacing:.04em;white-space:nowrap;font-variant-numeric:tabular-nums}
+.slide .ttl{color:var(--cue);font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.slide .rule{flex:1 1 1em;height:2px;background:var(--cue);opacity:.6}
+.slide .time{font:500 .85em var(--ui);color:var(--cue);white-space:nowrap}
+.slide.past{opacity:.3}
+#slideNow{font:500 13px var(--ui);color:#1a1405;background:var(--cue);border-radius:6px;padding:7px 10px;min-height:40px;display:flex;align-items:center;font-variant-numeric:tabular-nums}
+.cue{position:fixed;left:0;right:0;top:calc(var(--readpos)*var(--vh));height:0;pointer-events:none;z-index:2}
+.cue::before,.cue::after{content:"";position:absolute;top:-14px;border:14px solid transparent}
+.cue::before{left:6px;border-left:20px solid var(--cue)}
+.cue::after{right:6px;border-right:20px solid var(--cue)}
+.cue i{position:absolute;left:44px;right:44px;top:0;border-top:1px dashed #ffc94a44}
+.shade{position:fixed;left:0;right:0;pointer-events:none;z-index:1}
+.shade.top{top:0;height:calc(var(--readpos)*var(--vh) - .6*var(--size));background:linear-gradient(var(--stage),#0b0d10cc 55%,#0b0d1000)}
+#bar{position:fixed;top:0;left:0;right:0;z-index:5;display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:calc(10px + env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) 10px max(14px,env(safe-area-inset-left));background:linear-gradient(#0b0d10f2,#0b0d10d0 70%,#0b0d1000);transition:opacity .4s}
+#bar.idle{opacity:0}
+#bar .btn{min-height:40px;padding:7px 12px;font-size:14px;background:var(--panel)}
+#bar .grp{display:flex;gap:4px;align-items:center}
+@media (pointer:coarse){#bar .btn{min-height:46px;padding:8px 14px;font-size:15px}}
+#bar .btn[aria-pressed=true]{border-color:var(--cue);color:var(--cue)}
+#listen{display:flex;align-items:center;gap:8px;font-weight:700}
+#listen[aria-pressed=true]{border-color:var(--tally)!important;color:var(--ink)!important}
+#bar .sp{flex:1}
+#progress{position:fixed;top:0;left:0;height:3px;background:var(--cue);width:0;z-index:6;transition:width .3s}
+#heard{position:fixed;left:0;right:0;bottom:0;z-index:5;padding:10px max(16px,env(safe-area-inset-left)) calc(10px + env(safe-area-inset-bottom));font:13px var(--ui);color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:linear-gradient(#0b0d1000,#0b0d10e8 40%)}
+#heard b{color:var(--ink);font-weight:500}
+#resume{position:fixed;inset:0;z-index:8;display:flex;align-items:center;justify-content:center;background:#0b0d10b3;border:0;color:var(--ink);font:700 22px var(--read);cursor:pointer}
+#resume span{background:var(--panel);border:2px solid var(--tally);border-radius:12px;padding:18px 26px;display:flex;align-items:center;gap:12px}
+#toast{position:fixed;left:50%;bottom:56px;transform:translateX(-50%);z-index:9;background:var(--panel);border:1px solid var(--cue);color:var(--ink);padding:10px 16px;border-radius:8px;max-width:min(92vw,520px);font-size:14px}
+
+@media (prefers-reduced-motion:reduce){ .w,#bar,#progress{transition:none} }
+</style>
+</head>
+<body>
+
+<section id="editor">
+  <header>
+    <div class="tally" aria-hidden="true"></div>
+    <div class="brand">Voice Prompter</div>
+    <div id="count">0 words</div>
+  </header>
+
+  <textarea id="script" spellcheck="false" aria-label="Your script"># Folie 1 · Titel · 0:30
+
+Hallo zusammen. Ich stelle euch heute Kapitel 1 aus Fischer, Möller und Schultze vor, also die Einführung ins Controlling. Das Kapitel beantwortet drei Fragen: Was steuert Controlling? Wie kann man Controlling verstehen? Und was machen Controller in der Praxis tatsächlich? Ich brauche ungefähr 25 Minuten, danach möchte ich mit euch über drei Fragen diskutieren.
+
+# Folie 2 · Ein Tag mit dem Chefcontroller · 1:30
+
+Das Kapitel startet mit einem Fallbeispiel. Rasmus, ein Student, darf einen Tag lang Dr. Müller-Christ begleiten. Er ist Chefcontroller der Grape SE, eines Elektronikkonzerns, der Fernseher, Smartphones und Tablets herstellt.
+
+Der Tag sieht so aus: In der Früh geht es um die Herstellkosten eines UHD-Fernsehers. Danach um die Planungsprämissen fürs nächste Jahr. Zu Mittag diskutiert er die Investitionsrichtlinie, konkret die Frage, ob Thailand einen anderen Kapitalkostensatz braucht als Vietnam. Am Nachmittag sitzt er dann in der Strategiesitzung für die Mobilgeräte und bremst das Marketing, weil sich der Business Case mit der teuren Ausstattung nicht rechnet.
+
+Vier Termine, vier ganz unterschiedliche Themen. Was ist Controlling also eigentlich? Am Abend erzählt der Chefcontroller, wie sich sein Beruf verändert hat: vom Kostenrechner und Registrator hin zum Navigator und Innovator. Darauf komme ich am Ende zurück.
+
+# Folie 3 · Agenda · 0:30
+
+Ich halte mich an den Aufbau des Kapitels. Zuerst geht es um den Gegenstand, also welche Ziele Controlling steuert und mit welchen Zahlen. Dann um das Verständnis: Eine einheitliche Definition gibt es nämlich nicht, sondern mehrere Konzeptionen, aus denen die Autoren ihre eigene ableiten. Danach schauen wir, was Controller in der Praxis machen, auch im Vergleich zu den USA. Zum Schluss geht es darum, wovon die Gestaltung des Controllings abhängt. Und dann diskutieren wir.
+
+# Folie 4 · Ziele entstehen aus Stakeholder-Interessen · 1:30
+
+Controlling soll dem Management helfen, Ziele zu erreichen. Also muss man zuerst klären, welche Ziele überhaupt gemeint sind. Die Ziele eines Unternehmens kommen aus den Interessen der Stakeholder: Eigen- und Fremdkapitalgeber, Kunden, Lieferanten, Mitarbeitende und der Staat.
+
+Dazu gibt es zwei Positionen. Beim Shareholder-Ansatz zählen die Eigenkapitalgeber am meisten, und das ergibt ein klares, monetäres Wertziel. Der Stakeholder-Ansatz will alle Gruppen zufriedenstellen. Dafür braucht es einen Mix aus Wert-, Sach-, Sozial- und ökologischen Zielen. Wie man diesen Mix messbar macht, ist laut Kapitel noch offen.
+
+In der Praxis löst man das pragmatisch. Ein Wertziel wie die Rendite ist das Oberziel, soziale und ökologische Ziele sind Nebenbedingungen. Das Stichwort dazu ist Triple Bottom Line. Festgehalten werden die Ziele in Vision und Leitbild, und Daimler zeigt das als Pyramide: ganz oben profitables Wachstum, unten die Werte. Ob Nachhaltigkeit wirklich nur Nebenbedingung sein soll, nehme ich in die Diskussion mit.
+
+# Folie 5 · Strategisches und operatives Controlling · 1:45
+
+Die erste große Unterscheidung ist die zwischen strategischem und operativem Controlling. Historisch kam das operative zuerst. Bis in die 1960er gab es einen Verkäufermarkt, die Unternehmen mussten vor allem produzieren. Strategisch zu denken wurde erst mit Strukturbrüchen wie der Ölkrise 1973 wichtig.
+
+Den Unterschied kann man sich mit zwei Fragen merken. Strategisch: Tun wir die richtigen Dinge? Das ist Effektivität. Operativ: Tun wir die Dinge richtig? Das ist Effizienz.
+
+Das strategische Controlling schaut nach außen, auf Markt und Umfeld, und steuert Erfolgspotenziale über mehrere Jahre. Die Informationen dafür sind oft unscharf und qualitativ. Das operative Controlling schaut nach innen und steuert Erfolg und Liquidität in den bestehenden Strukturen, mit Zahlen aus dem Rechnungswesen.
+
+Die Autoren sagen klar, dass man die beiden Ebenen nicht trennen soll. Eine Strategie muss operativ umsetzbar sein, und operative Entscheidungen müssen zur Strategie passen. Volkswagen trennt die Bereiche deshalb auch organisatorisch nicht. Bei Grape SE haben wir übrigens beides gesehen, den Jour fixe in der Früh und die Strategiesitzung am Nachmittag.
+
+# Folie 6 · Das Rechnungswesen liefert die Zahlen · 1:30
+
+Für beide Ebenen braucht Controlling Zahlen, und die kommen aus dem Rechnungswesen. In der Tabelle seht ihr vier Begriffspaare, die man auseinanderhalten muss. Ein- und Auszahlungen verändern den Geldbestand. Daraus ergibt sich der Cashflow, und der steuert die Liquidität. Erträge und Aufwendungen stehen in der GuV und ergeben den Jahresüberschuss, Leistungen und Kosten kommen aus der Kostenrechnung und ergeben das Betriebsergebnis. Die Investitionsrechnung betrachtet mehrere Perioden.
+
+Warum gibt es zwei Erfolgsgrößen? Die Kostenrechnung lässt neutrale Aufwendungen weg, zum Beispiel Spekulationsverluste. Dafür nimmt sie kalkulatorische Kosten dazu, etwa den kalkulatorischen Unternehmerlohn.
+
+Unten steht die wichtigste Trennung. Das externe Rechnungswesen richtet sich an die Kapitalgeber, ist gesetzlich geregelt und dient der Dokumentation. Das interne richtet sich ans Management und kann frei gestaltet werden. Bei uns führt man beides getrennt, das nennt man Zweikreissystem. Im angelsächsischen Raum gibt es dagegen ein Einkreissystem.
+
+# Folie 7 · Drei Fragen, drei Teilrechnungen · 1:30
+
+Das wichtigste Werkzeug des internen Rechnungswesens ist die Kostenrechnung. Sie beantwortet drei Fragen, eine nach der anderen.
+
+Erstens: Welche Kosten sind angefallen? Das erfasst die Kostenartenrechnung. Sie trennt Einzelkosten, die man einem Produkt direkt zurechnen kann, von Gemeinkosten.
+
+Zweitens: Wo sind die Kosten angefallen? Die Kostenstellenrechnung verteilt die Gemeinkosten auf Bereiche wie Material, Fertigung, Verwaltung und Vertrieb. Über den Betriebsabrechnungsbogen geben die Hilfskostenstellen ihre Kosten an die Hauptkostenstellen weiter.
+
+Drittens: Wofür sind sie angefallen? Die Kostenträgerrechnung rechnet alles auf die Produkte um, entweder pro Stück in der Kalkulation oder pro Periode in der kurzfristigen Erfolgsrechnung. Bei Grape SE war das der Jour fixe in der Früh, wo es um die Herstellkosten des UHD-Fernsehers ging.
+
+Noch zwei Punkte. Die Kostenrechnung ist eine Zweckrechnung, es gibt also nicht die eine richtige Form. Je nach Zeitbezug und Umfang unterscheidet man außerdem Ist-, Normal- und Plankostenrechnung sowie Voll- und Teilkostenrechnung.
+
+# Folie 8 · Lohnt sich die Investition? · 1:30
+
+Das dritte Rechenwerk ist die Investitionsrechnung. Sie fragt zuerst, ob eine Investition besser ist, als gar nichts zu tun. Das ist die absolute Vorteilhaftigkeit. Und dann, welche von mehreren Alternativen die beste ist. Das ist die relative Vorteilhaftigkeit.
+
+Statische Verfahren schauen nur auf eine Durchschnittsperiode. Das ist einfach, ignoriert aber, dass ein Euro heute mehr wert ist als ein Euro in drei Jahren. Dynamische Verfahren betrachten die ganze Laufzeit und zinsen die Zahlungen ab.
+
+Dazu habe ich ein kleines Beispiel gerechnet. Wir investieren 100.000 Euro und bekommen drei Jahre lang jeweils 40.000 Euro zurück, der Zinssatz liegt bei 8 Prozent. Nominal sind das 120.000 Euro. Abgezinst bleiben 103.084 Euro, der Kapitalwert ist also plus 3.084 Euro. Das Projekt lohnt sich, aber nur knapp.
+
+Bei 10 Prozent wäre der Kapitalwert schon negativ. Deshalb kämpft der Controller bei Grape SE so um den richtigen Kapitalkostensatz für jedes Land.
+
+# Folie 9 · Ein Zahlenwerk für innen und außen? · 1:15
+
+Das Zweikreissystem hat ein Problem. Jahresüberschuss und Betriebsergebnis messen beide den Erfolg, können aber stark voneinander abweichen. Wenn das Management intern mit einer anderen Zahl steuert, als im Geschäftsbericht steht, leidet die Glaubwürdigkeit. Deshalb nähern sich internes und externes Rechnungswesen an. Man spricht von Harmonisierung oder Konvergenz.
+
+Dafür spricht eine gemeinsame Datenbasis, die Single Source of Truth. Man spart sich Doppelarbeit und kann stärker standardisieren. Dagegen spricht, dass externe Bewertungsregeln nicht für Entscheidungen gemacht sind und die Zahlen verzerren können. Mit jedem neuen Standard wird das System außerdem komplizierter, und viele Entscheidungen brauchen ohnehin eine eigene Analyse.
+
+Die Autoren empfehlen daher eine partielle Integration. Die Kontrollrechnung, zum Beispiel das Betriebsergebnis, kann man angleichen. Planung und Entscheidungsrechnungen wie die Preiskalkulation oder die Investitionsrechnung bleiben intern. Es gibt auch den umgekehrten Weg: Beim Management Approach der IFRS gehen interne Steuerungsgrößen nach außen, zum Beispiel in die Segmentberichterstattung.
+
+# Folie 10 · Vier Antworten auf „Was ist Controlling?“ · 1:45
+
+Damit sind wir bei 1.2. Controlling ist weit verbreitet, eine einheitliche Definition gibt es trotzdem nicht. Das Kapitel stellt vier Konzeptionen vor, die in der Praxis relevant sind.
+
+Die ergebniszielorientierte Konzeption von Hahn und Hungenberg richtet Planung und Kontrolle auf das Unternehmensergebnis aus. Kritisiert wird, dass das Management ohnehin nach Gewinn strebt. Dafür braucht man keine eigene Funktion.
+
+Bei Reichmann, also der informationsorientierten Konzeption, findet Controlling heraus, welche Informationen die Entscheider brauchen, und bereitet sie passend auf. Wichtig ist hier der Unterschied zwischen Informationsbedarf und Informationsnachfrage. Der Bedarf ist das, was objektiv nötig ist, die Nachfrage das, was jemand subjektiv haben will. Die Kritik: Das ist eigentlich nur ein weiterentwickeltes Rechnungswesen.
+
+Horváth und Küpper sehen Controlling als Koordinator der Führungssysteme. Wenn Controlling aber alles koordiniert, ist es kaum noch vom Management zu unterscheiden. Bei Weber und Schäffer soll Controlling die Rationalität der Führung sichern, also Schwächen der Manager ausgleichen. Dagegen kann man sagen, dass jede Funktion im Unternehmen rational handeln sollte.
+
+Ihr seht, die Konzeptionen bauen aufeinander auf und werden immer breiter. Die zwei jüngeren schauen wir uns jetzt genauer an.
+
+# Folie 11 · Koordination und Rationalitätssicherung · 1:30
+
+Links seht ihr Horváth. Er teilt das Führungssystem in zwei Teile, das Planungs- und Kontrollsystem und das Informationsversorgungssystem. Controlling koordiniert die beiden auf zwei Arten. Systembildend heißt, dass Controlling die Systeme so aufbaut, dass sie zusammenpassen. Systemkoppelnd heißt, dass es die Manager im laufenden Planungs- und Kontrollprozess unterstützt. Horváth nimmt auch die strategische Planung mit hinein, Controlling ist bei ihm also nicht mehr rein operativ.
+
+Küpper geht noch einen Schritt weiter und nimmt Organisation und Personalführung dazu. Damit gehört zum Beispiel auch die Gestaltung von Anreizsystemen zum Controlling.
+
+Rechts seht ihr Weber und Schäffer. Für sie ist Führung ein Kreislauf aus Willensbildung, Durchsetzung, Ausführung und Kontrolle, und was man aus der Kontrolle lernt, fließt wieder zurück. Manager haben dabei zwei Arten von Defiziten. Beim Könnensdefizit fehlen Informationen. Beim Wollensdefizit fehlt die Motivation, etwa weil die Anreize falsch gesetzt sind. Der Controller soll beides ausgleichen. Er entlastet das Management und ist gleichzeitig sein kritischer Gegenpart.
+
+# Folie 12 · Arbeitsdefinition des Buchs · 1:30
+
+Was nehmen die Autoren aus diesen Konzeptionen mit? Alle Definitionen haben zwei Dinge gemeinsam: Sie beziehen Controlling auf die Unternehmensziele, und sie sehen Koordination als Kernaufgabe.
+
+Daraus ergibt sich die Arbeitsdefinition des Buchs. Controlling ist zielorientierte Steuerung durch Information, Planung, Kontrolle und Koordination. Es ist eine Hilfsfunktion des Managements.
+
+Die Funktion hat zwei Teile. Der erste ist die Entscheidungsunterstützung: Controlling liefert die Grundlage, auf der ein Manager selbst entscheidet. Es plant Alternativen und prüft später, ob das Geplante eingetreten ist.
+
+Der zweite Teil ist die Verhaltenssteuerung. Die braucht es, sobald Entscheidungen delegiert werden. Ein Bereichsleiter weiß über seinen Bereich mehr als die Zentrale und hat eigene Interessen, das ist klassische Prinzipal-Agent-Theorie. Controlling setzt hier Anreize. Dabei darf man einen Manager nur an Größen messen, die er selbst beeinflussen kann. Und weil meistens mehrere Personen beteiligt sind, müssen ihre Entscheidungen zusammenpassen. Das meint Koordination.
+
+# Folie 13 · Vom Gegenrechner zum Lehrstuhl · 1:00
+
+In 1.4 geht es um die Praxis, und ich fange mit der Geschichte an. Die Wurzeln liegen im Staat. Schon beim Bau der Pyramiden soll es Prüfer gegeben haben, die Soll- und Istbestände verglichen. Der Begriff selbst kommt aus England: 1242 taucht dort „contrarotulus“ auf, die Gegenrechnung, und daraus wurde später der Controller.
+
+In Unternehmen gibt es Controller erst seit 1880, zuerst bei einer amerikanischen Eisenbahngesellschaft, 1892 dann bei General Electric. Den Durchbruch brachte die Weltwirtschaftskrise. Man hat gemerkt, dass Buchen allein nicht reicht und man nach vorne planen muss.
+
+In Deutschland hat es länger gedauert. In den 1950ern lernten deutsche Manager das Konzept in den USA kennen und lehnten es zuerst ab. Angekommen ist es erst in den 1970ern: 1974 hatten 90 Prozent der Großunternehmen Controller. Den ersten Controlling-Lehrstuhl bekam 1973 Horváth in Darmstadt, 2004 waren es schon 72.
+
+# Folie 14 · Manager, Controller, Controlling · 1:30
+
+Was ist eigentlich der Unterschied zwischen Manager, Controller und Controlling? Der Internationale Controller Verein trennt das so: Der Manager ist für das Ergebnis verantwortlich. Er setzt die Ziele und entscheidet. Der Controller ist für die Transparenz verantwortlich. Er liefert Informationen, bereitet Entscheidungen vor und moderiert die Planung. Der ICV nennt ihn den „Lotsen zum Gewinn“. Controlling ist das, was entsteht, wenn beide zusammenarbeiten. Manager machen also selbst auch Controlling.
+
+Rechts seht ihr, was Controller tatsächlich machen. Das ist eine Befragung von Weber und Kollegen mit 618 Antworten auf einer Skala von 1 bis 7. Ganz vorne liegt Planung und Kontrolle mit 5,42, knapp dahinter Informationsversorgung und Rationalitätssicherung. Koordination kommt mit 4,26 klar zuletzt.
+
+Das finde ich bemerkenswert. Bei Horváth ist Koordination der Kern des Controllings, in der Praxis liegt sie auf dem letzten Platz.
+
+# Folie 15 · Weg vom Kontrolleur, hin zum Berater · 1:15
+
+Die Grafik zeigt fünf von zwölf Rollen aus derselben Studie. Grau ist das Fremdbild, also wie andere Abteilungen den Controller sehen. Orange ist das Zielbild, also wie Controller gerne wären.
+
+Der interne Berater liegt in beiden Fällen vorne. Interessanter ist der untere Teil. 35 Prozent sehen den Controller als Kontrolleur, sein wollen das aber nur knapp 3 Prozent. Beim Erbsenzähler sind es knapp 16 Prozent im Fremdbild und ein halbes Prozent im Zielbild. Beim Change Agent ist es genau umgekehrt: 8 Prozent Fremdbild, 30 Prozent Zielbild.
+
+Controller wollen also weg vom Erbsenzähler und hin zum Business Partner. Laut Kapitel hängt das Fremdbild stark vom Standing ab. Wer im Unternehmen geschätzt wird, gilt als Berater, wer wenig geschätzt wird, als Kontrolleur oder Spürhund. Diese Spannung greife ich in der ersten Diskussionsfrage auf.
+
+# Folie 16 · „Controlling“ ist ein deutsches Wort · 1:15
+
+„Controlling“ klingt englisch, ist es aber nicht. Im Englischen sagt man Management Accounting oder Controllership. Ins Deutsche hat das Wort vermutlich Albrecht Deyhle gebracht, der Gründer des Internationalen Controller Vereins.
+
+In den USA hat das Financial Executives Institute schon 1962 klar getrennt. Financial Management besteht dort aus Controllership und Treasurership. Zur Controllership gehören Planung, Berichterstattung und Beratung, zur Treasurership Kapitalbeschaffung, Bankbeziehungen und Investor Relations.
+
+Eine Studie von Stoffel vergleicht beide Länder. Der Kern ist gleich: Kostenrechnung, Budgetierung, internes Berichtswesen. Amerikanische Management Accountants machen aber zusätzlich viel externes Rechnungswesen, Steuern und sogar Debitorenbuchhaltung, und sie denken eher kurzfristig. Deutsche Controller denken eher langfristig. In welche Richtung es geht, ist aber auf beiden Seiten gleich. Das IMA definiert den Management Accountant seit 2008 als Partner bei Managemententscheidungen.
+
+# Folie 17 · Business Partner: mehr Zeit für Entscheidungen · 1:15
+
+Die Grafik basiert auf einer Darstellung von PwC und zeigt, wofür Controller ihre Zeit verwenden. Traditionell gehen 40 Prozent in operative Tätigkeiten, 30 Prozent in die Planung und 20 Prozent in Berichte. Für echte Entscheidungsunterstützung bleiben 10 Prozent. Im Zielbild soll es die Hälfte der Zeit sein.
+
+Woher soll diese Zeit kommen? Heute geht ungefähr zwei Drittel der Controller-Zeit in die Datenaufbereitung. Ansetzen kann man bei der Integration von internem und externem Rechnungswesen, bei Automatisierung und bei Standardisierung. Gleichzeitig steht das Controlling unter Kostendruck. Der Finanzbereich kostet je nach Unternehmen zwischen 0,6 und 3 Prozent vom Umsatz.
+
+Auch der CFO, an den der Controller meistens berichtet, hat eine neue Rolle. Früher hat er vor allem Zahlen aus der Vergangenheit präsentiert, heute gestaltet er mit, über Performance Management und Corporate Governance. Das Buch nennt Hansgrohe als Beispiel: Anfang der 1990er war das Controlling dort ein reiner Zahlenlieferant, heute ist es Business Partner und berät bei der Strategie.
+
+# Folie 18 · Kein Controlling von der Stange · 1:15
+
+Im letzten Abschnitt geht es darum, wie ein Unternehmen sein Controlling gestaltet. Die kurze Antwort des Kapitels: Es kommt darauf an.
+
+Links seht ihr die Gestaltungsfaktoren. Da sind zuerst die Anspruchsgruppen. Direkt sind das das Management, die dezentralen Manager und die Abschlussprüfer, indirekt die Aktionäre, der Aufsichtsrat und weitere Stakeholder. Dazu kommt der Kontext. Intern zählen Größe, Struktur, Kultur und IT, extern Branche, Märkte und Technologie. Das Buch bringt dazu ein gutes Beispiel. Ein Halbleiterhersteller hat Produktzyklen von einem Jahr, ein Autohersteller von sechs Jahren. Beide planen strategisch, nur mit einem ganz anderen Zeithorizont.
+
+Rechts stehen die Gestaltungsbereiche, die daraus folgen. Beim Prozess wird es konkret: Standardisierbare Aufgaben wie das Reporting bündelt man in einem Center of Scale, wissensintensive wie das Investitionscontrolling in einem Center of Expertise. Und eine Balanced Scorecard funktioniert im Konzern genauso wie im kleinen Unternehmen, nur die Detailtiefe ist anders. Deshalb stellt das Buch vor allem Grundkonzepte vor.
+
+# Folie 19 · Fazit · 1:00
+
+Zum Schluss vier Punkte. Erstens ist Controlling zielorientierte Steuerung durch Information, Planung, Kontrolle und Koordination. Es unterstützt Entscheidungen und steuert Verhalten. Zweitens gehören strategisches und operatives Controlling zusammen: Das eine fragt, ob wir die richtigen Dinge tun, das andere, ob wir sie richtig tun.
+
+Drittens gibt es keine einheitliche Definition. Die Konzeptionen reichen von reiner Informationsversorgung bis zur Koordination der ganzen Führung. Und viertens verändert sich die Rolle vom Erbsenzähler hin zum Business Partner.
+
+Noch kurz zu Rasmus. Am Abend sagt der Chefcontroller, man müsse klar festhalten, was Controlling im Konzern bedeutet, damit man es kommunizieren kann. Und Rasmus bekommt am Ende ein Praktikum angeboten.
+
+# Folie 20 · Drei Fragen an euch · 0:45, dann Diskussion
+
+Das war's von meiner Seite, jetzt würde ich gerne mit euch diskutieren. Ich habe drei Fragen vorbereitet. Fangen wir mit der ersten an und schauen, wie weit wir kommen.
+
+„Controller wollen Business Partner sein und gleichzeitig das ökonomische Gewissen. Geht das überhaupt? Oder verliert man die nötige Distanz, wenn man eng mit dem Management zusammenarbeitet?“
+
+„Zwei Drittel der Zeit gehen in die Datenaufbereitung. Macht KI Controller endlich zu Business Partnern, oder macht sie sie überflüssig?“
+
+„In der Praxis sind Soziales und Ökologie nur Nebenbedingungen. Sollte Controlling sie gleichrangig zum Wertziel steuern? Und wie würde man das messen?“
+
+Danke euch für die Diskussion und die Beiträge!</textarea>
+
+  <aside>
+    <label class="f">Speech language
+      <select id="lang">
+        <option value="en-US">English (US)</option>
+        <option value="en-GB">English (UK)</option>
+        <option value="de-AT">Deutsch (Österreich)</option>
+        <option value="de-DE">Deutsch (Deutschland)</option>
+        <option value="sk-SK">Slovenčina</option>
+        <option value="es-ES">Español</option>
+      </select>
+    </label>
+    <label class="f">Text size <span class="v" id="sizeV">56 px</span>
+      <input type="range" id="size" min="28" max="120" step="2" value="56">
+    </label>
+    <label class="f">Reading line <span class="v" id="posV">Upper third</span>
+      <input type="range" id="pos" min="15" max="55" step="1" value="33">
+    </label>
+    <label class="f">Auto-scroll speed (no voice) <span class="v" id="speedV">40 px/s</span>
+      <input type="range" id="speed" min="10" max="160" step="5" value="40">
+    </label>
+    <label class="chk"><input type="checkbox" id="mirror"> Mirror text (beam-splitter glass)</label>
+
+    <div class="go">
+      <p class="note" id="support"></p>
+      <p class="note">A line starting with <kbd>#</kbd> becomes a yellow slide divider, e.g. <kbd># Folie 4 · Titel · 1:30</kbd></p>
+      <button class="btn primary" id="start">Start prompter</button>
+      <button class="btn" id="restore">Restore Kapitel 1 script</button>
+      <p class="note">On iPad: tap <b>Listen</b>, use ‹ › for slides, tap any word or divider to jump. With a keyboard: <kbd>Space</kbd> listen · <kbd>PgUp</kbd><kbd>PgDn</kbd> slide · <kbd>↑</kbd><kbd>↓</kbd> nudge · <kbd>A</kbd> auto-scroll · <kbd>M</kbd> mirror · <kbd>+</kbd><kbd>−</kbd> size · <kbd>Esc</kbd> edit</p>
+    </div>
+  </aside>
+</section>
+
+<section id="prompter" hidden>
+  <div id="progress"></div>
+  <div id="bar">
+    <button class="btn" id="listen" aria-pressed="false"><span class="tally" id="tally"></span><span id="listenL">Listen</span></button>
+    <button class="btn" id="auto" aria-pressed="false">Auto-scroll</button>
+    <button class="btn" id="mirrorB" aria-pressed="false">Mirror</button>
+    <button class="btn" id="smaller" aria-label="Smaller text">A−</button>
+    <button class="btn" id="bigger" aria-label="Larger text">A+</button>
+    <span class="grp" id="slideNav" hidden><button class="btn" id="prevS" aria-label="Previous slide">‹</button><span id="slideNow"></span><button class="btn" id="nextS" aria-label="Next slide">›</button></span>
+    <div class="sp"></div>
+    <button class="btn" id="full">Full screen</button>
+    <button class="btn" id="edit">Edit script</button>
+  </div>
+  <div class="shade top"></div>
+  <div class="cue"><i></i></div>
+  <div id="stage"><div id="text"></div></div>
+  <div id="heard">Tap <b>Listen</b> (or press <b>Space</b>) and start reading.</div>
+</section>
+
+<button id="resume" hidden><span><span class="tally on"></span>Tap to keep listening</span></button>
+<div id="toast" hidden></div>
+
+<script>
+(() => {
+  const $ = s => document.querySelector(s);
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem('vpk1:' + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+    set(k, v) { try { localStorage.setItem('vpk1:' + k, JSON.stringify(v)); } catch {} }
+  };
+
+  const st = {
+    words: [], match: [], slides: [], mi: 0, cur: 0, nowEl: null,
+    listening: false, rec: null, restarts: 0,
+    auto: false, free: false, target: 0, mode: 'edit',
+    lang: store.get('lang', 'de-AT'), size: store.get('size', 56), pos: store.get('pos', 33),
+    speed: store.get('speed', 40), mirror: store.get('mirror', false)
+  };
+
+  /* ---------- editor ---------- */
+  const ta = $('#script');
+  const ORIGINAL = ta.defaultValue;
+  const saved = store.get('script', null);
+  if (saved) ta.value = saved;
+  $('#restore').onclick = () => { ta.value = ORIGINAL; store.set('script', null); wordCount(); };
+  $('#lang').value = st.lang;
+  $('#size').value = st.size; $('#pos').value = st.pos; $('#speed').value = st.speed; $('#mirror').checked = st.mirror;
+
+  function wordCount() {
+    const n = ta.value.split('\n').filter(l => !l.trim().startsWith('#')).join(' ').split(/\s+/).filter(Boolean).length;
+    const secs = Math.round(n / 130 * 60);
+    $('#count').textContent = `${n} words · ~${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')} at 130 wpm`;
+  }
+  ta.addEventListener('input', () => { store.set('script', ta.value); wordCount(); });
+  wordCount();
+
+  function applySettings() {
+    document.documentElement.style.setProperty('--size', st.size + 'px');
+    document.documentElement.style.setProperty('--readpos', st.pos / 100);
+    $('#sizeV').textContent = st.size + ' px';
+    $('#posV').textContent = st.pos < 26 ? 'Near top' : st.pos < 40 ? 'Upper third' : 'Middle';
+    $('#speedV').textContent = st.speed + ' px/s';
+    $('#text').classList.toggle('mirror', st.mirror);
+    $('#mirrorB').setAttribute('aria-pressed', st.mirror);
+    $('#mirror').checked = st.mirror;
+  }
+  $('#lang').onchange = e => { st.lang = e.target.value; store.set('lang', st.lang); };
+  $('#size').oninput = e => { st.size = +e.target.value; store.set('size', st.size); applySettings(); };
+  $('#pos').oninput = e => { st.pos = +e.target.value; store.set('pos', st.pos); applySettings(); };
+  $('#speed').oninput = e => { st.speed = +e.target.value; store.set('speed', st.speed); applySettings(); };
+  $('#mirror').onchange = e => { st.mirror = e.target.checked; store.set('mirror', st.mirror); applySettings(); };
+  applySettings();
+
+  const IOS_NOTE = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const sup = $('#support');
+  if (!SR) { sup.textContent = 'This browser has no speech recognition. Use Safari on iPad, or Chrome or Edge on a computer. Auto-scroll still works here.'; sup.classList.add('warn'); }
+  else sup.textContent = IOS_NOTE ? 'iPad: Dictation must be on (Settings › General › Keyboard). Needs internet and microphone access.' : 'Voice tracking uses the browser’s speech service, so it needs internet and microphone access.';
+
+  /* ---------- text handling ---------- */
+  function norm(w) {
+    return w.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/ß/g, 'ss').replace(/[^\p{L}\p{N}]+/gu, '');
+  }
+  function lev(a, b) {
+    const m = a.length, n = b.length; let prev = Array.from({ length: n + 1 }, (_, j) => j);
+    for (let i = 1; i <= m; i++) {
+      const cur = [i];
+      for (let j = 1; j <= n; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = cur;
+    }
+    return prev[n];
+  }
+  function sim(a, b) {
+    if (a === b) return 1;
+    if (a.length < 3 || b.length < 3) return 0;
+    if (b.startsWith(a) && a.length >= 4) return 0.8; // interim result cut mid-word
+    const r = 1 - lev(a, b) / Math.max(a.length, b.length);
+    return r >= 0.7 ? r : 0;
+  }
+  const weight = w => w.length <= 2 ? 0.4 : w.length <= 3 ? 0.7 : 1;
+
+  function build() {
+    const box = $('#text'); box.textContent = '';
+    st.words = []; st.match = []; st.slides = []; st.mi = 0; st.cur = 0; st.nowEl = null;
+    let p = null, slide = 0;
+    ta.value.split('\n').forEach(line => {
+      const t = line.trim();
+      if (!t) { p = null; return; }
+      if (t.startsWith('#')) {
+        p = null;
+        const parts = t.replace(/^#+\s*/, '').split(/\s*·\s*/);
+        const m = parts[0].match(/\d+/);
+        slide = m ? +m[0] : slide + 1;
+        const d = document.createElement('div');
+        d.className = 'slide'; d.setAttribute('role', 'separator');
+        d.innerHTML = '<span class="num"></span><span class="ttl"></span><span class="rule"></span><span class="time"></span>';
+        d.querySelector('.num').textContent = /^\d+$/.test(parts[0]) ? 'Folie ' + parts[0] : parts[0];
+        d.querySelector('.ttl').textContent = parts[1] || '';
+        d.querySelector('.time').textContent = parts.slice(2).join(' · ');
+        d.dataset.w = st.words.length;
+        st.slides.push({ el: d, n: slide, w: st.words.length });
+        box.appendChild(d);
+        return;
+      }
+      if (!p) { p = document.createElement('p'); box.appendChild(p); }
+      else p.appendChild(document.createTextNode(' '));
+      t.split(/\s+/).forEach((tok, k) => {
+        if (k) p.appendChild(document.createTextNode(' '));
+        const s = document.createElement('span'); s.className = 'w'; s.textContent = tok;
+        const i = st.words.length; s.dataset.i = i;
+        const n = norm(tok);
+        st.words.push({ el: s, n });
+        if (n) st.match.push(i);
+        p.appendChild(s);
+      });
+    });
+    st.slideMax = st.slides.reduce((a, s) => Math.max(a, s.n), 0);
+    $('#slideNav').hidden = !st.slides.length;
+  }
+  const miAt = idx => { const mi = st.match.findIndex(x => x >= idx); return mi < 0 ? st.match.length : mi; };
+  function curSlide() { let c = -1; st.slides.forEach((s, i) => { if (s.w <= st.cur) c = i; }); return c; }
+  function markSlides() {
+    if (!st.slides.length) return;
+    const c = curSlide();
+    st.slides.forEach((s, i) => s.el.classList.toggle('past', i < c));
+    $('#slideNow').textContent = c < 0 ? `– / ${st.slideMax}` : `Folie ${st.slides[c].n} / ${st.slideMax}`;
+  }
+  function jumpSlide(dir) {
+    if (!st.slides.length) return;
+    const c = curSlide();
+    const at = c >= 0 ? st.slides[c] : null;
+    let target;
+    if (dir > 0) target = st.slides[c + 1];
+    else target = (at && st.cur > at.w) ? at : st.slides[Math.max(0, c - 1)];
+    if (target) setCursor(miAt(target.w));
+  }
+
+  function setCursor(mi) {
+    const W = st.words, M = st.match;
+    mi = Math.max(0, Math.min(mi, M.length));
+    const nw = mi < M.length ? M[mi] : W.length;
+    if (nw > st.cur) for (let i = st.cur; i < nw; i++) W[i].el.classList.add('said');
+    else for (let i = nw; i < st.cur; i++) W[i].el.classList.remove('said');
+    if (st.nowEl) st.nowEl.classList.remove('now');
+    st.nowEl = W[nw] ? W[nw].el : null;
+    if (st.nowEl) st.nowEl.classList.add('now');
+    st.cur = nw; st.mi = mi; st.free = false;
+    markSlides();
+    aim();
+    $('#progress').style.width = (M.length ? mi / M.length * 100 : 0) + '%';
+  }
+  function aim() {
+    const stage = $('#stage');
+    const el = st.nowEl || (st.words.length ? st.words[st.words.length - 1].el : null);
+    if (!el) return;
+    const top = el.getBoundingClientRect().top - stage.getBoundingClientRect().top + stage.scrollTop;
+    st.target = Math.max(0, top - stage.clientHeight * st.pos / 100 - el.offsetHeight * 0.15);
+  }
+
+  function align(spoken) {
+    const k = Math.min(spoken.length, 5);
+    if (!k || !st.match.length) return;
+    const tail = spoken.slice(-k), W = st.words, M = st.match;
+    let best = -1, bestScore = 0;
+    const lo = Math.max(0, st.mi - 3), hi = Math.min(M.length - 1, st.mi + 40);
+    for (let j = lo; j <= hi; j++) {
+      let s = 0;
+      for (let i = 0; i < k && j - i >= 0; i++) {
+        const b = W[M[j - i]].n;
+        s += sim(tail[k - 1 - i], b) * weight(b);
+      }
+      s -= Math.max(0, j - st.mi) * 0.03;
+      if (s > bestScore) { bestScore = s; best = j; }
+    }
+    const need = k === 1 ? 0.9 : 1.4;
+    if (best >= 0 && bestScore >= need && best + 1 > st.mi) setCursor(best + 1);
+  }
+
+  /* ---------- speech ---------- */
+  function setLive(on) {
+    st.listening = on;
+    $('#listen').setAttribute('aria-pressed', on);
+    $('#listenL').textContent = on ? 'Listening' : 'Listen';
+    document.querySelectorAll('.tally').forEach(t => t.classList.toggle('on', on));
+  }
+  let wake = null;
+  const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  function makeRec() {
+    const r = new SR();
+    r.lang = st.lang; r.continuous = true; r.interimResults = true; r.maxAlternatives = 1;
+    r.onresult = e => {
+      if (st.rec !== r) return;
+      st.restarts = 0; st.heardOnce = true;
+      let txt = '';
+      for (let i = Math.max(0, e.results.length - 3); i < e.results.length; i++) txt += ' ' + e.results[i][0].transcript;
+      const words = txt.split(/\s+/).map(norm).filter(Boolean);
+      align(words.slice(-6));
+      const shown = txt.trim().split(/\s+/).slice(-12).join(' ');
+      $('#heard').innerHTML = 'Heard: <b></b>'; $('#heard b').textContent = shown;
+    };
+    r.onerror = e => {
+      if (st.rec !== r) return;
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+        // Worked before → iPadOS refused a restart without a tap. Ask for one tap.
+        if (st.heardOnce) { pauseListen(); return; }
+        stopListen();
+        toast(IOS
+          ? 'Microphone or Dictation is off. Turn on Settings › General › Keyboard › Enable Dictation, allow the microphone for this site (aA › Website Settings), then tap Listen.'
+          : 'The microphone is blocked. Allow it via the icon in the address bar, then press Space again.');
+      } else if (e.error === 'network') {
+        stopListen(); toast('Speech recognition needs an internet connection.');
+      } else if (e.error === 'audio-capture') {
+        stopListen(); toast('No microphone found. Check that no other app is using it.');
+      }
+    };
+    r.onend = () => {
+      if (st.rec !== r || !st.listening) return;
+      // Safari and Chrome stop after a pause in speech. Start a fresh session right away.
+      if (++st.restarts > 8) { pauseListen(); return; }
+      setTimeout(() => { if (st.listening && st.rec === r) spawn(); }, IOS ? 250 : 50);
+    };
+    return r;
+  }
+  function spawn() {
+    const r = makeRec(); st.rec = r;
+    try { r.start(); } catch { pauseListen(); }
+  }
+  function startListen() {
+    if (!SR) { toast('No speech recognition in this browser. Use Safari on iPad, or Chrome or Edge on a computer. Auto-scroll still works.'); return; }
+    if (st.auto) toggleAuto(false);
+    $('#resume').hidden = true;
+    st.restarts = 0; setLive(true); spawn();
+  }
+  function pauseListen() {
+    const r = st.rec; st.rec = null; setLive(false);
+    if (r) try { r.abort(); } catch {}
+    if (st.mode === 'prompt') $('#resume').hidden = false;
+  }
+  function stopListen() {
+    const r = st.rec; st.rec = null; setLive(false);
+    $('#resume').hidden = true;
+    if (r) try { r.abort ? r.abort() : r.stop(); } catch {}
+  }
+  $('#resume').onclick = () => startListen();
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && st.listening) pauseListen();
+    if (!document.hidden && st.mode === 'prompt') { try { navigator.wakeLock?.request('screen').then(w => wake = w).catch(() => {}); } catch {} }
+  });
+  const toggleListen = () => st.listening ? stopListen() : startListen();
+
+  /* ---------- auto-scroll + animation ---------- */
+  function toggleAuto(on = !st.auto) {
+    if (on && st.listening) stopListen();
+    st.auto = on; $('#auto').setAttribute('aria-pressed', on);
+  }
+  let last = performance.now(), fracScroll = 0;
+  function tick(t) {
+    const dt = Math.min(0.1, (t - last) / 1000); last = t;
+    if (st.mode === 'prompt') {
+      const s = $('#stage');
+      if (st.auto) {
+        fracScroll += st.speed * dt;
+        const whole = Math.floor(fracScroll); fracScroll -= whole;
+        s.scrollTop += whole; st.target = s.scrollTop;
+      } else if (!st.free) {
+        const d = st.target - s.scrollTop;
+        if (Math.abs(d) > 0.5) s.scrollTop += reduce ? d : d * Math.min(1, dt * 5);
+      }
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+
+  /* ---------- modes ---------- */
+  async function enterPrompt() {
+    build(); applySettings();
+    $('#editor').hidden = true; $('#prompter').hidden = false; st.mode = 'prompt';
+    $('#stage').scrollTop = 0;
+    requestAnimationFrame(() => { setCursor(0); $('#stage').scrollTop = st.target; });
+    try { wake = await navigator.wakeLock?.request('screen'); } catch {}
+    poke();
+  }
+  function exitPrompt() {
+    stopListen(); toggleAuto(false);
+    $('#prompter').hidden = true; $('#editor').hidden = false; st.mode = 'edit';
+    try { if (fsEl()) (document.exitFullscreen || document.webkitExitFullscreen).call(document); } catch {}
+    try { wake && wake.release(); } catch {} wake = null;
+    ta.focus();
+  }
+  $('#start').onclick = enterPrompt;
+  $('#edit').onclick = exitPrompt;
+  $('#listen').onclick = toggleListen;
+  $('#auto').onclick = () => toggleAuto();
+  $('#mirrorB').onclick = () => { st.mirror = !st.mirror; store.set('mirror', st.mirror); applySettings(); };
+  const resize = d => { st.size = Math.max(28, Math.min(120, st.size + d)); store.set('size', st.size); $('#size').value = st.size; applySettings(); requestAnimationFrame(aim); };
+  $('#smaller').onclick = () => resize(-4);
+  $('#bigger').onclick = () => resize(4);
+  const de = document.documentElement;
+  const fsEl = () => document.fullscreenElement || document.webkitFullscreenElement;
+  const fsReq = de.requestFullscreen ? () => de.requestFullscreen() : de.webkitRequestFullscreen ? () => de.webkitRequestFullscreen() : null;
+  if (!fsReq) $('#full').hidden = true;
+  $('#full').onclick = () => {
+    try {
+      if (fsEl()) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+      else { const r = fsReq(); r && r.catch && r.catch(() => toast('Full screen is not available here.')); }
+    } catch { toast('Full screen is not available here.'); }
+  };
+  $('#prevS').onclick = () => jumpSlide(-1);
+  $('#nextS').onclick = () => jumpSlide(1);
+  $('#text').addEventListener('click', e => {
+    const sl = e.target.closest('.slide');
+    if (sl) { setCursor(miAt(+sl.dataset.w)); return; }
+    const w = e.target.closest('.w'); if (!w) return;
+    setCursor(miAt(+w.dataset.i));
+  });
+  const stage = $('#stage');
+  ['wheel', 'touchmove'].forEach(ev => stage.addEventListener(ev, () => { if (!st.auto) st.free = true; }, { passive: true }));
+  window.addEventListener('resize', () => requestAnimationFrame(aim));
+
+  document.addEventListener('keydown', e => {
+    if (st.mode !== 'prompt' || e.target.closest('input,select,textarea')) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    switch (e.key) {
+      case ' ': e.preventDefault(); toggleListen(); break;
+      case 'Escape': exitPrompt(); break;
+      case 'ArrowDown': e.preventDefault(); setCursor(st.mi + 5); break;
+      case 'ArrowUp': e.preventDefault(); setCursor(st.mi - 5); break;
+      case 'PageDown': case 'ArrowRight': e.preventDefault(); jumpSlide(1); break;
+      case 'PageUp': case 'ArrowLeft': e.preventDefault(); jumpSlide(-1); break;
+      case 'a': case 'A': toggleAuto(); break;
+      case 'm': case 'M': $('#mirrorB').click(); break;
+      case '+': case '=': resize(4); break;
+      case '-': case '_': resize(-4); break;
+      default: return;
+    }
+    poke();
+  });
+
+  /* hide the control bar while reading */
+  let idleT;
+  function poke() {
+    $('#bar').classList.remove('idle'); clearTimeout(idleT);
+    idleT = setTimeout(() => { if (st.listening || st.auto) $('#bar').classList.add('idle'); }, 2500);
+  }
+  ['mousemove', 'touchstart'].forEach(ev => document.addEventListener(ev, () => st.mode === 'prompt' && poke(), { passive: true }));
+
+  let toastT;
+  function toast(msg) {
+    const t = $('#toast'); t.textContent = msg; t.hidden = false;
+    clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 5000);
+  }
+})();
+</script>
+</body>
+</html>
